@@ -1,0 +1,102 @@
+---
+title: "Analyzing Building Permit Data"
+output: 
+  html_notebook: 
+    code_folding: hide
+    theme: simplex
+---
+
+# Preprocessing
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+
+setwd("/Users/chaoguo/src/DurhamUpzoning/Data")
+permit_data <- read.csv('All_Building_Permits.csv', header = TRUE, stringsAsFactors = FALSE)
+
+# Some data wrangling
+permit_data$ISSUE_DATE <- lubridate::ymd_hms(permit_data$ISSUE_DATE)
+permit_data$Issue_year_month <- paste0(lubridate::year(permit_data$ISSUE_DATE), '-', lubridate::month(permit_data$ISSUE_DATE), '-', '01')
+permit_data$Issue_year_month <- lubridate::ymd(permit_data$Issue_year_month)
+```
+
+# Percentage of permit application that were approved/issued
+We want to see if there has been more permits that are related to building new residential homes after October 2019. The graph suggests an upward trend but we don't see a significant jump after October 2019.
+
+We have also checked the percentage of these permits (divided by all permits), but its proportion is too high that most of the time, 100% permits are these permits.
+```{r, fig.width = 10, fig.height = 8}
+permit_status_by_time <- permit_data %>% group_by(PmtStatus, Issue_year_month) %>% summarise(cnt = n()) %>% ungroup() %>%
+  tidyr::pivot_wider(id_cols = Issue_year_month, names_from = PmtStatus, values_from = cnt, names_prefix = 'PERMIT_TYPE_', values_fill = 0) %>%
+  arrange(Issue_year_month)
+
+permit_status_by_time$total_records <- rowSums(permit_status_by_time[, 2:10])
+
+permit_status_by_time$Issued_OR_pending <- permit_status_by_time$`PERMIT_TYPE_CO Issued` +
+  permit_status_by_time$`PERMIT_TYPE_CO Pending` +  # CO stands for "commercial/office"? Or "Conditional Overlays"?
+  permit_status_by_time$PERMIT_TYPE_Complete +
+  permit_status_by_time$`PERMIT_TYPE_Cond. CO Issued` +
+  permit_status_by_time$PERMIT_TYPE_Issued
+
+permit_status_by_time$Issued_OR_pending_perc <- permit_status_by_time$Issued_OR_pending / permit_status_by_time$total_records
+
+p <- ggplot(permit_status_by_time[2:nrow(permit_status_by_time), ], aes(x=Issue_year_month, y=total_records)) +
+  geom_line() + geom_point() +
+  ggtitle('Number of Permits by Year/Month', subtitle = 'We are counting anything that is pending, issued, or complete') +
+  scale_x_date(date_labels = "%b-%Y", date_breaks = '12 month') +
+  xlab('Issued Year/Month') + ylab('Number of Records') +
+  geom_vline(xintercept = as.numeric(as.Date("2019-10-01")), linetype=4) +  # zoning reforms implemented on October 1, 2019
+  theme_linedraw()
+
+print(p)
+```
+
+# Different types of activities by year
+We make these plot by looking at different types of building types and building activities. The idea is that these two fields tell us the intention of the applicant.
+
+## Adding/New a new modular unit
+```{r, fig.width = 10, fig.height = 8}
+n_by_year <- permit_data %>%
+  filter(BLDB_ACTIVITY_1 %in% c('Addition','New'), BLD_Type %in% c('Modular Unit')) %>%
+  group_by(Issue_year_month) %>% summarise(num_of_record = n())
+
+ggplot(n_by_year[2:nrow(n_by_year), ], aes(x=Issue_year_month, y=num_of_record)) +
+  geom_line() + geom_point() +
+  ggtitle('Number of Permits by Year/Month', subtitle = 'Addition/New of Modular') +
+  scale_x_date(date_labels = "%b-%Y", date_breaks = '12 month') +
+  xlab('Issued Year/Month') + ylab('Number of Permits') +
+  geom_vline(xintercept = as.numeric(as.Date("2019-10-01")), linetype=4) +  # zoning reforms implemented on October 1, 2019
+  theme_linedraw()
+```
+
+## Adding/New a new SFH or a mobile home
+```{r, fig.width = 10, fig.height = 8}
+n_by_year <- permit_data %>% filter(BLDB_ACTIVITY_1 %in% c('Addition','New'),
+                                    BLD_Type %in% c('Single Family House','Mobile Home') 
+                                    )%>%
+  group_by(Issue_year_month) %>% summarise(num_of_record = n())
+
+ggplot(n_by_year[2:nrow(n_by_year), ], aes(x=Issue_year_month, y=num_of_record)) +
+  geom_line() + geom_point() +
+  ggtitle('Number of Permits by Year/Month', subtitle = 'Adding a Single Family House/Mobile Home') +
+  scale_x_date(date_labels = "%b-%Y", date_breaks = '12 month') +
+  xlab('Issued Year/Month') + ylab('Number of Permits') +
+  geom_vline(xintercept = as.numeric(as.Date("2019-10-01")), linetype=4) +  # zoning reforms implemented on October 1, 2019
+  theme_linedraw()
+```
+
+## Adding/New residential units that have more than 3 units
+```{r, fig.width = 10, fig.height = 8}
+n_by_year <- permit_data %>% filter(BLDB_ACTIVITY_1 %in% c('Addition','New'),
+                                    BLD_Type %in% c('3-4 Residential Units','5+ Residential Units') 
+                                    )%>%
+  group_by(Issue_year_month) %>% summarise(num_of_record = n())
+
+ggplot(n_by_year[2:nrow(n_by_year), ], aes(x=Issue_year_month, y=num_of_record)) +
+  geom_line() + geom_point() +
+  ggtitle('Number of Permits by Year/Month', subtitle = 'Addition/New of 3+ Residential Units') +
+  scale_x_date(date_labels = "%b-%Y", date_breaks = '12 month') +
+  xlab('Issued Year/Month') + ylab('Number of Permits') +
+  geom_vline(xintercept = as.numeric(as.Date("2019-10-01")), linetype=4) +  # zoning reforms implemented on October 1, 2019
+  theme_linedraw()
+```
